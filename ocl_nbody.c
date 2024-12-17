@@ -85,6 +85,7 @@ int main() {
     
     Body bodies[NUM_BODIES];
     size_t global_size = NUM_BODIES;
+    float dt = DT;
 
     // Initializing position, velocity, and mass for each body
     for (int i = 0; i < NUM_BODIES; i++) {
@@ -109,9 +110,9 @@ int main() {
 
 
     // Create OpenCL buffers
-    cl_mem buffer_bodies = clCreateBuffer(context, CL_MEMR_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(Body) * NUM_BODIES, bodies, &err);
-    cl_mem_buffer_fx = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float) * NUM_BODIES, NULL, &err);
-    cl_mem_buffer_fy = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float) * NUM_BODIES, NULL, &err);
+    cl_mem buffer_bodies = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR, sizeof(Body) * NUM_BODIES, bodies, &err);
+    cl_mem buffer_fx = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float) * NUM_BODIES, NULL, &err);
+    cl_mem buffer_fy = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(float) * NUM_BODIES, NULL, &err);
 
     // Create and build OpenCL program for the kernels
     cl_program program = clCreateProgramWithSource(context, 1, &kernel_source, NULL, &err);
@@ -120,7 +121,7 @@ int main() {
 
     cl_program update_program = clCreateProgramWithSource(context, 1, &update_kernel_source, NULL, &err);
     clBuildProgram(update_program, 1, &device, NULL, NULL, NULL);
-    cl_kernel kernel = clCreateKernel(update_program, "update_bodies", &err);
+    cl_kernel update_kernel = clCreateKernel(update_program, "update_bodies", &err);
     
     // Main simulation loop
     for (int step = 0; step < 1000; step++) {
@@ -128,7 +129,7 @@ int main() {
         clSetKernelArg(kernel, 0, sizeof(cl_mem), &buffer_bodies);
         clSetKernelArg(kernel, 1, sizeof(cl_mem), &buffer_fx);
         clSetKernelArg(kernel, 2, sizeof(cl_mem), &buffer_fy);
-        clSetKernelArg(kernel, 3, sizeof(int), &NUM_BODIES);
+        clSetKernelArg(kernel, 3, sizeof(int), &global_size);
 
         clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_size, NULL, 0, NULL, NULL );
         clFinish(queue);
@@ -137,8 +138,8 @@ int main() {
         clSetKernelArg(update_kernel, 0, sizeof(cl_mem), &buffer_bodies);
         clSetKernelArg(update_kernel, 1, sizeof(cl_mem), &buffer_fx);
         clSetKernelArg(update_kernel, 2, sizeof(cl_mem), &buffer_fy);
-        clSetKernelArg(update_kernel, 3, sizeof(float), &DT);
-        clSetKernelArg(update_kernel, 4, sizeof(int), &NUM_BODIES);
+        clSetKernelArg(update_kernel, 3, sizeof(float), &dt);
+        clSetKernelArg(update_kernel, 4, sizeof(int), &global_size);
 
         clEnqueueNDRangeKernel(queue, update_kernel, 1, NULL, &global_size, NULL, 0, NULL, NULL);
         clFinish(queue);
