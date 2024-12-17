@@ -3,12 +3,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <pthread.h>
+#include <omp.h>
 
 #define G 6.67430e-11  // Gravitational constant 
 #define NUM_BODIES 1000    // Number of bodies in the system
 #define DT 60*60*24     // Time step (1 day in seconds)
-#define NUM_THREADS 4
+
 
 // Position, velocity, and mass of each body
 typedef struct {
@@ -16,15 +16,6 @@ typedef struct {
     double vx, vy;    // Velocity (vx, vy)
     double mass;      // Mass
 } Body;
-
-//Stucture used to pass data to threads
-typedef struct {
-    Body* bodies;
-    int start;
-    int end;
-}ThreadData;
-
-pthread_barrier_t barrier; // Barrier for synchronizing threads
 
 // Compute the gravitational force between two bodies
 void compute_gravitational_force(Body *b1, Body *b2, double *fx, double *fy) {
@@ -48,37 +39,35 @@ void compute_gravitational_force(Body *b1, Body *b2, double *fx, double *fy) {
 }
 
 // Update positions and velocities of the bodies
-void* update_bodies(void* arg) {
-    ThreadData* data = (ThreadData*) arg;
-    Body* bodies = data->bodies;
-    int start = data->start;
-    int end = data->end;
+void update_bodies(Body bodies[], int num_bodies, double dt) {
     double fx, fy;
+    #pragma omp parrallel for private(fx,fy)
     
     // Calculate the forces on each body
-    for (int i = start; i < end; i++) {
+    for (int i = 0; i < num_bodies; i++) {
         fx = 0.0;
         fy = 0.0;
         
         // Summation of all forces on that body
-        for (int j = 0; j < NUM_BODIES; j++) {
+        for (int j = 0; j < num_bodies; j++) {
             if (i != j) {
                 compute_gravitational_force(&bodies[i], &bodies[j], &fx, &fy);
                 // Update the velocity of body i due to the force from body j
-                bodies[i].vx += fx / bodies[i].mass * DT;
-                bodies[i].vy += fy / bodies[i].mass * DT;
+                #pragma omp atomic
+                bodies[i].vx += fx / bodies[i].mass * dt;
+                bodies[i].vy += fy / bodies[i].mass * dt;
+                }
             }
         }
-    }
-    //Synchronize before updating postions
-    pthread_barrier_wait(&barrier);
+    
 
+    #pragma omp parallel for
     // Update the positions based on the velocities
-    for (int i = start; i < end; i++) {
-        bodies[i].x += bodies[i].vx * DT;
-        bodies[i].y += bodies[i].vy * DT;
+    for (int i = 0; i < NUM_BODIES; i++) {
+        bodies[i].x += bodies[i].vx * dt;
+        bodies[i].y += bodies[i].vy * dt;
     }
-   return NULL;
+    
 }
 
 // Just printing body positions here
@@ -90,14 +79,9 @@ void print_positions(Body bodies[], int num_bodies) {
     printf("\n");
 }
 
-
 int main() {
     Body bodies[NUM_BODIES];
-    pthread_t threads[NUM_THREADS];
-    ThreadData thread_data[NUM_THREADS];
-    pthread_barrier_init(&barrier, NULL, NUM_THREADS);
-    int chunk_size = NUM_BODIES / NUM_THREADS;
-
+    
     // Initializing position, velocity, and mass for each body
     for (int i = 0; i < NUM_BODIES; i++) {
         bodies[i].x = rand() % 1000000000; 
@@ -111,20 +95,8 @@ int main() {
     for (int step = 0; step < 1000; step++) {
         printf("Step %d:\n", step);
         print_positions(bodies, NUM_BODIES);
-
-        
-        for (int i =0; i < NUM_THREADS; i++){
-            thread_data[i].bodies = bodies;
-            thread_data[i].start = i * chunk_size;
-            thread_data[i].end = (i == NUM_THREADS - 1)? NUM_BODIES: (i+1) * chunk_size;
-            pthread_create(&threads[i], NULL, update_bodies, &thread_data[i]);
-            }
-       
-       for (int i = 0; i < NUM_THREADS; i++){
-        pthread_join(threads[i], NULL);
-       }
+        update_bodies(bodies, NUM_BODIES, DT);
     }
 
-    pthread_barrier_destroy(&barrier);
     return 0;
 }
